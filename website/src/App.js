@@ -1,179 +1,176 @@
 import React, { useEffect, useRef, useState } from "react";
 import "./App.css";
 
-function App() {
-  // =====================================================
-  // IMAGE UPLOAD STATES
-  // =====================================================
+// ===============================
+// DEPLOYED FLASK BACKEND
+// ===============================
+const API_URL =
+  "https://traffic-sign-recognition-d120.onrender.com";
 
-  const [image, setImage] = useState(null);
+function App() {
+  // ===============================
+  // STATES
+  // ===============================
+  const [selectedFile, setSelectedFile] = useState(null);
   const [preview, setPreview] = useState(null);
+
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
 
-  // =====================================================
-  // HISTORY
-  // =====================================================
-
   const [history, setHistory] = useState([]);
-
-  // =====================================================
-  // CAMERA STATES
-  // =====================================================
 
   const [cameraActive, setCameraActive] = useState(false);
   const [cameraResult, setCameraResult] = useState(null);
   const [cameraLoading, setCameraLoading] = useState(false);
 
   const videoRef = useRef(null);
+  const canvasRef = useRef(null);
   const streamRef = useRef(null);
 
-  // =====================================================
-  // IMAGE UPLOAD
-  // =====================================================
+  // ===============================
+  // IMAGE FILE SELECTION
+  // ===============================
+  const handleFileChange = (event) => {
+    const file = event.target.files[0];
 
-  const handleImageChange = (file) => {
     if (!file) {
       return;
     }
 
-    if (!file.type.startsWith("image/")) {
-      alert("Please select a valid image file.");
-      return;
-    }
-
-    setImage(file);
-    setPreview(URL.createObjectURL(file));
+    setSelectedFile(file);
     setResult(null);
+
+    const imageURL = URL.createObjectURL(file);
+    setPreview(imageURL);
   };
 
-  const handleFileInput = (event) => {
-    const file = event.target.files[0];
-
-    handleImageChange(file);
-  };
-
-  // =====================================================
+  // ===============================
   // DRAG AND DROP
-  // =====================================================
-
+  // ===============================
   const handleDrop = (event) => {
     event.preventDefault();
 
     const file = event.dataTransfer.files[0];
 
-    handleImageChange(file);
+    if (!file) {
+      return;
+    }
+
+    if (!file.type.startsWith("image/")) {
+      alert("Please upload an image file.");
+      return;
+    }
+
+    setSelectedFile(file);
+    setResult(null);
+
+    const imageURL = URL.createObjectURL(file);
+    setPreview(imageURL);
   };
 
   const handleDragOver = (event) => {
     event.preventDefault();
   };
 
-  // =====================================================
-  // IMAGE ANALYSIS
-  // =====================================================
-
-  const analyzeImage = async () => {
-    if (!image) {
-      alert("Please select a traffic sign image first.");
+  // ===============================
+  // UPLOAD IMAGE TO FLASK
+  // ===============================
+  const predictImage = async () => {
+    if (!selectedFile) {
+      alert("Please select an image first.");
       return;
     }
 
     setLoading(true);
     setResult(null);
 
-    const formData = new FormData();
-
-    formData.append("image", image);
-
     try {
-      const response = await fetch(
-        "http://localhost:5000/predict",
-        {
-          method: "POST",
-          body: formData,
-        }
-      );
+      const formData = new FormData();
+
+      formData.append("image", selectedFile);
+
+      const response = await fetch(`${API_URL}/predict`, {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!response.ok) {
+        throw new Error("Server error");
+      }
 
       const data = await response.json();
 
-      if (!response.ok) {
-        throw new Error(
-          data.error || "Prediction failed"
-        );
-      }
-
       setResult(data);
 
-      const newPrediction = {
+      // Add prediction to history
+      const newHistory = {
+        type: "Image Upload",
         prediction: data.prediction,
         confidence: data.confidence,
-        time: new Date().toLocaleTimeString(),
+        class_id: data.class_id,
+        time: new Date().toLocaleString(),
       };
 
-      setHistory((previousHistory) => [
-        newPrediction,
-        ...previousHistory,
-      ]);
-
+      setHistory((prev) => [newHistory, ...prev]);
     } catch (error) {
       console.error(error);
 
-      setResult({
-        error:
-          "Unable to connect to the prediction server. Make sure Flask is running.",
-      });
+      alert(
+        "Unable to connect to the prediction server.\n\n" +
+        "Please make sure the Render backend is running."
+      );
     }
 
     setLoading(false);
   };
 
-  // =====================================================
-  // START CAMERA
-  // =====================================================
+  // ===============================
+  // CLEAR IMAGE
+  // ===============================
+  const clearImage = () => {
+    setSelectedFile(null);
+    setPreview(null);
+    setResult(null);
+  };
 
+  // ===============================
+  // START CAMERA
+  // ===============================
   const startCamera = async () => {
     try {
-      setCameraResult(null);
-
-      const stream =
-        await navigator.mediaDevices.getUserMedia({
-          video: {
-            facingMode: "environment",
-          },
-          audio: false,
-        });
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: "environment",
+        },
+        audio: false,
+      });
 
       streamRef.current = stream;
 
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
-
-        await videoRef.current.play();
       }
 
       setCameraActive(true);
-
+      setCameraResult(null);
     } catch (error) {
       console.error(error);
 
       alert(
-        "Unable to access camera. Please allow camera permission in your browser."
+        "Camera access denied or unavailable.\n\n" +
+        "Please allow camera permission in your browser."
       );
     }
   };
 
-  // =====================================================
+  // ===============================
   // STOP CAMERA
-  // =====================================================
-
+  // ===============================
   const stopCamera = () => {
     if (streamRef.current) {
-      streamRef.current
-        .getTracks()
-        .forEach((track) => {
-          track.stop();
-        });
+      streamRef.current.getTracks().forEach((track) => {
+        track.stop();
+      });
 
       streamRef.current = null;
     }
@@ -185,26 +182,18 @@ function App() {
     setCameraActive(false);
   };
 
-  // =====================================================
+  // ===============================
   // CAPTURE CAMERA IMAGE
-  // =====================================================
-
-  const captureAndAnalyze = async () => {
-    if (!videoRef.current) {
-      return;
-    }
-
-    if (!cameraActive) {
-      alert("Please start the camera first.");
+  // ===============================
+  const captureImage = async () => {
+    if (!videoRef.current || !canvasRef.current) {
       return;
     }
 
     setCameraLoading(true);
-    setCameraResult(null);
 
     const video = videoRef.current;
-
-    const canvas = document.createElement("canvas");
+    const canvas = canvasRef.current;
 
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
@@ -219,223 +208,202 @@ function App() {
       canvas.height
     );
 
-    canvas.toBlob(
-      async (blob) => {
-        if (!blob) {
-          setCameraLoading(false);
+    canvas.toBlob(async (blob) => {
+      if (!blob) {
+        setCameraLoading(false);
+        return;
+      }
 
-          alert("Unable to capture camera image.");
-
-          return;
-        }
-
+      try {
         const formData = new FormData();
 
         formData.append(
           "image",
           blob,
-          "camera-frame.jpg"
+          "camera-capture.jpg"
         );
 
-        try {
-          const response = await fetch(
-            "http://localhost:5000/predict-camera",
-            {
-              method: "POST",
-              body: formData,
-            }
-          );
-
-          const data = await response.json();
-
-          if (!response.ok) {
-            throw new Error(
-              data.error ||
-                "Camera prediction failed"
-            );
+        // ===============================
+        // DEPLOYED FLASK CAMERA API
+        // ===============================
+        const response = await fetch(
+          `${API_URL}/predict-camera`,
+          {
+            method: "POST",
+            body: formData,
           }
+        );
 
-          setCameraResult(data);
-
-          const newPrediction = {
-            prediction: data.prediction,
-            confidence: data.confidence,
-            time: new Date().toLocaleTimeString(),
-          };
-
-          setHistory((previousHistory) => [
-            newPrediction,
-            ...previousHistory,
-          ]);
-
-        } catch (error) {
-          console.error(error);
-
-          setCameraResult({
-            error:
-              "Unable to connect to the camera prediction server.",
-          });
+        if (!response.ok) {
+          throw new Error("Camera prediction failed");
         }
 
-        setCameraLoading(false);
-      },
-      "image/jpeg",
-      0.9
-    );
+        const data = await response.json();
+
+        setCameraResult(data);
+
+        // Add camera result to history
+        const newHistory = {
+          type: "Camera",
+          prediction: data.prediction,
+          confidence: data.confidence,
+          class_id: data.class_id,
+          time: new Date().toLocaleString(),
+        };
+
+        setHistory((prev) => [newHistory, ...prev]);
+      } catch (error) {
+        console.error(error);
+
+        alert(
+          "Unable to connect to the camera prediction server."
+        );
+      }
+
+      setCameraLoading(false);
+    }, "image/jpeg");
   };
 
-  // =====================================================
-  // CLEAR HISTORY
-  // =====================================================
-
-  const clearHistory = () => {
-    setHistory([]);
-  };
-
-  // =====================================================
+  // ===============================
   // STOP CAMERA WHEN PAGE CLOSES
-  // =====================================================
-
+  // ===============================
   useEffect(() => {
     return () => {
       if (streamRef.current) {
-        streamRef.current
-          .getTracks()
-          .forEach((track) => {
-            track.stop();
-          });
+        streamRef.current.getTracks().forEach((track) => {
+          track.stop();
+        });
       }
     };
   }, []);
 
-  // =====================================================
-  // UI
-  // =====================================================
+  // ===============================
+  // SCROLL TO SECTION
+  // ===============================
+  const scrollToSection = (id) => {
+    const section = document.getElementById(id);
 
+    if (section) {
+      section.scrollIntoView({
+        behavior: "smooth",
+      });
+    }
+  };
+
+  // ===============================
+  // UI
+  // ===============================
   return (
     <div className="app">
 
-      {/* =================================================
+      {/* =====================================
           NAVBAR
-      ================================================= */}
-
+      ===================================== */}
       <nav className="navbar">
-
         <div className="logo">
-          🚦 TrafficAI
+          🚦 Traffic Sign AI
         </div>
 
         <div className="nav-links">
-
-          <a href="#home">
+          <button onClick={() => scrollToSection("home")}>
             Home
-          </a>
+          </button>
 
-          <a href="#analyzer">
+          <button onClick={() => scrollToSection("analyzer")}>
             Analyzer
-          </a>
+          </button>
 
-          <a href="#camera">
+          <button onClick={() => scrollToSection("camera")}>
             Camera
-          </a>
+          </button>
 
-          <a href="#history">
+          <button onClick={() => scrollToSection("history")}>
             History
-          </a>
+          </button>
 
-          <a href="#about">
+          <button onClick={() => scrollToSection("about")}>
             About
-          </a>
-
+          </button>
         </div>
-
       </nav>
 
-      {/* =================================================
-          HERO
-      ================================================= */}
-
-      <section
-        id="home"
-        className="hero"
-      >
+      {/* =====================================
+          HERO SECTION
+      ===================================== */}
+      <section id="home" className="hero">
 
         <div className="hero-content">
 
-          <span className="badge">
-            AI POWERED TRAFFIC SIGN RECOGNITION
-          </span>
+          <div className="hero-badge">
+            🧠 Powered by Deep Learning
+          </div>
 
           <h1>
-            Understand Traffic Signs
-
-            <span>
-              Instantly with AI
-            </span>
+            Traffic Sign
+            <span> Recognition</span>
           </h1>
 
           <p>
-            Upload a traffic sign image or use
-            your camera and let our deep learning
-            model identify the sign.
+            Identify traffic signs instantly using a
+            Convolutional Neural Network trained on the
+            GTSRB traffic sign dataset.
           </p>
 
-          <a
-            href="#analyzer"
-            className="hero-button"
-          >
-            Start Recognition →
-          </a>
+          <div className="hero-buttons">
+
+            <button
+              className="primary-btn"
+              onClick={() => scrollToSection("analyzer")}
+            >
+              Analyze Image
+            </button>
+
+            <button
+              className="secondary-btn"
+              onClick={() => scrollToSection("camera")}
+            >
+              Open Camera
+            </button>
+
+          </div>
 
         </div>
 
       </section>
 
-      {/* =================================================
-          IMAGE ANALYZER
-      ================================================= */}
+      {/* =====================================
+          ANALYZER SECTION
+      ===================================== */}
+      <section id="analyzer" className="section">
 
-      <section
-        id="analyzer"
-        className="analyzer-section"
-      >
+        <div className="section-title">
 
-        <div className="section-heading">
-
-          <span>
-            AI ANALYZER
-          </span>
+          <span>IMAGE ANALYZER</span>
 
           <h2>
-            Upload Traffic Sign
+            Upload a Traffic Sign
           </h2>
 
           <p>
-            Select an image and our CNN model
-            will analyze it.
+            Upload an image and our CNN model will
+            identify the traffic sign.
           </p>
 
         </div>
 
         <div className="analyzer-card">
 
+          {/* UPLOAD AREA */}
           <div
             className="upload-area"
             onDrop={handleDrop}
             onDragOver={handleDragOver}
           >
 
-            {preview ? (
+            {!preview ? (
 
-              <img
-                src={preview}
-                alt="Traffic sign preview"
-                className="preview-image"
-              />
+              <div className="upload-content">
 
-            ) : (
-
-              <>
                 <div className="upload-icon">
                   📷
                 </div>
@@ -445,53 +413,61 @@ function App() {
                 </h3>
 
                 <p>
-                  or select an image from your computer
+                  or select an image from your device
                 </p>
-              </>
 
-            )}
+                <label className="upload-btn">
+                  Choose Image
 
-            <label className="choose-button">
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleFileChange}
+                    hidden
+                  />
+                </label>
 
-              Choose Image
-
-              <input
-                type="file"
-                accept="image/*"
-                onChange={handleFileInput}
-                hidden
-              />
-
-            </label>
-
-          </div>
-
-          <button
-            className="analyze-button"
-            onClick={analyzeImage}
-            disabled={loading}
-          >
-
-            {loading ? (
-
-              <>
-                <span className="spinner"></span>
-                Analyzing...
-              </>
+              </div>
 
             ) : (
 
-              <>
-                🔍 Analyze Traffic Sign
-              </>
+              <div className="preview-container">
+
+                <img
+                  src={preview}
+                  alt="Traffic sign preview"
+                  className="preview-image"
+                />
+
+                <div className="preview-actions">
+
+                  <button
+                    className="primary-btn"
+                    onClick={predictImage}
+                    disabled={loading}
+                  >
+                    {loading
+                      ? "Analyzing..."
+                      : "🔍 Analyze Sign"}
+                  </button>
+
+                  <button
+                    className="clear-btn"
+                    onClick={clearImage}
+                  >
+                    Clear
+                  </button>
+
+                </div>
+
+              </div>
 
             )}
 
-          </button>
+          </div>
 
-          {/* IMAGE RESULT */}
-
-          {result && !result.error && (
+          {/* RESULT */}
+          {result && (
 
             <div className="result-card">
 
@@ -501,26 +477,24 @@ function App() {
 
               <div className="result-content">
 
-                <span className="result-label">
+                <p className="result-label">
                   RECOGNIZED TRAFFIC SIGN
-                </span>
+                </p>
 
                 <h2>
                   {result.prediction}
                 </h2>
 
-                <div className="confidence-section">
+                <div className="confidence">
 
                   <div className="confidence-header">
-
                     <span>
                       Confidence
                     </span>
 
                     <strong>
-                      {result.confidence}%
+                      {Number(result.confidence).toFixed(2)}%
                     </strong>
-
                   </div>
 
                   <div className="confidence-bar">
@@ -528,8 +502,10 @@ function App() {
                     <div
                       className="confidence-fill"
                       style={{
-                        width:
-                          `${result.confidence}%`,
+                        width: `${Math.min(
+                          Number(result.confidence),
+                          100
+                        )}%`,
                       }}
                     ></div>
 
@@ -547,67 +523,47 @@ function App() {
 
           )}
 
-          {result && result.error && (
-
-            <div className="error-message">
-
-              ⚠️ {result.error}
-
-            </div>
-
-          )}
-
         </div>
 
       </section>
 
-      {/* =================================================
-          LIVE CAMERA
-      ================================================= */}
+      {/* =====================================
+          CAMERA SECTION
+      ===================================== */}
+      <section id="camera" className="section camera-section">
 
-      <section
-        id="camera"
-        className="camera-section"
-      >
+        <div className="section-title">
 
-        <div className="section-heading">
-
-          <span>
-            LIVE AI CAMERA
-          </span>
+          <span>LIVE CAMERA</span>
 
           <h2>
-            Detect Traffic Signs Using Camera
+            Detect Using Camera
           </h2>
 
           <p>
-            Start your camera, show a traffic sign,
-            capture it and let the CNN model recognize it.
+            Point your camera toward a traffic sign
+            and capture it for prediction.
           </p>
 
         </div>
 
         <div className="camera-card">
 
-          {/* CAMERA VIEW */}
-
           <div className="camera-container">
 
-            {cameraActive ? (
+            <video
+              ref={videoRef}
+              autoPlay
+              playsInline
+              muted
+              className="camera-video"
+            />
 
-              <video
-                ref={videoRef}
-                className="camera-video"
-                autoPlay
-                playsInline
-                muted
-              ></video>
-
-            ) : (
+            {!cameraActive && (
 
               <div className="camera-placeholder">
 
-                <div className="camera-big-icon">
+                <div className="camera-icon">
                   📷
                 </div>
 
@@ -616,8 +572,7 @@ function App() {
                 </h3>
 
                 <p>
-                  Click "Start Camera" to begin
-                  traffic sign detection.
+                  Start the camera to detect traffic signs.
                 </p>
 
               </div>
@@ -626,14 +581,17 @@ function App() {
 
           </div>
 
-          {/* CAMERA BUTTONS */}
+          <canvas
+            ref={canvasRef}
+            style={{ display: "none" }}
+          />
 
           <div className="camera-buttons">
 
             {!cameraActive ? (
 
               <button
-                className="camera-start-button"
+                className="primary-btn"
                 onClick={startCamera}
               >
                 📷 Start Camera
@@ -641,63 +599,49 @@ function App() {
 
             ) : (
 
-              <button
-                className="camera-stop-button"
-                onClick={stopCamera}
-              >
-                ⏹ Stop Camera
-              </button>
+              <>
+                <button
+                  className="primary-btn"
+                  onClick={captureImage}
+                  disabled={cameraLoading}
+                >
+                  {cameraLoading
+                    ? "Analyzing..."
+                    : "📸 Capture & Analyze"}
+                </button>
+
+                <button
+                  className="clear-btn"
+                  onClick={stopCamera}
+                >
+                  Stop Camera
+                </button>
+              </>
 
             )}
-
-            <button
-              className="camera-capture-button"
-              onClick={captureAndAnalyze}
-              disabled={
-                !cameraActive ||
-                cameraLoading
-              }
-            >
-
-              {cameraLoading ? (
-
-                <>
-                  <span className="spinner"></span>
-                  Analyzing Camera...
-                </>
-
-              ) : (
-
-                <>
-                  📸 Capture & Analyze
-                </>
-
-              )}
-
-            </button>
 
           </div>
 
           {/* CAMERA RESULT */}
+          {cameraResult && (
 
-          {cameraResult &&
-            !cameraResult.error && (
+            <div className="result-card camera-result">
 
-              <div className="camera-result">
+              <div className="result-icon">
+                🚦
+              </div>
 
-                <div className="camera-result-icon">
-                  🚦
-                </div>
+              <div className="result-content">
 
-                <div className="camera-result-content">
+                <p className="result-label">
+                  CAMERA PREDICTION
+                </p>
 
-                  <span>
-                    CAMERA DETECTION RESULT
-                  </span>
+                <h2>
+                  {cameraResult.prediction}
+                </h2>
 
-                  <h2>
-                    {cameraResult.prediction}
-                  </h2>
+                <div className="confidence">
 
                   <div className="confidence-header">
 
@@ -706,7 +650,9 @@ function App() {
                     </span>
 
                     <strong>
-                      {cameraResult.confidence}%
+                      {Number(
+                        cameraResult.confidence
+                      ).toFixed(2)}%
                     </strong>
 
                   </div>
@@ -716,181 +662,60 @@ function App() {
                     <div
                       className="confidence-fill"
                       style={{
-                        width:
-                          `${cameraResult.confidence}%`,
+                        width: `${Math.min(
+                          Number(cameraResult.confidence),
+                          100
+                        )}%`,
                       }}
                     ></div>
 
                   </div>
 
-                  <p className="class-id">
-                    Class ID:{" "}
-                    {cameraResult.class_id}
-                  </p>
-
                 </div>
 
-              </div>
-
-            )}
-
-          {cameraResult &&
-            cameraResult.error && (
-
-              <div className="error-message">
-
-                ⚠️ {cameraResult.error}
+                <p className="class-id">
+                  Class ID: {cameraResult.class_id}
+                </p>
 
               </div>
 
-            )}
+            </div>
+
+          )}
 
         </div>
 
       </section>
 
-      {/* =================================================
-          HISTORY
-      ================================================= */}
+      {/* =====================================
+          WORKFLOW SECTION
+      ===================================== */}
+      <section className="workflow-section">
 
-      <section
-        id="history"
-        className="history-section"
-      >
+        <div className="section-title">
 
-        <div className="section-heading">
-
-          <span>
-            PREDICTION HISTORY
-          </span>
+          <span>HOW IT WORKS</span>
 
           <h2>
-            Recent Predictions
-          </h2>
-
-          <p>
-            View the traffic signs analyzed
-            during this session.
-          </p>
-
-        </div>
-
-        {history.length === 0 ? (
-
-          <div className="empty-history">
-
-            <div>
-              📊
-            </div>
-
-            <h3>
-              No predictions yet
-            </h3>
-
-            <p>
-              Upload an image or use the camera
-              to see your results here.
-            </p>
-
-          </div>
-
-        ) : (
-
-          <div className="history-container">
-
-            <div className="history-top">
-
-              <span>
-
-                {history.length} prediction
-                {history.length !== 1
-                  ? "s"
-                  : ""}
-
-              </span>
-
-              <button
-                onClick={clearHistory}
-                className="clear-button"
-              >
-                Clear History
-              </button>
-
-            </div>
-
-            <div className="history-list">
-
-              {history.map(
-                (item, index) => (
-
-                  <div
-                    className="history-item"
-                    key={index}
-                  >
-
-                    <div className="history-icon">
-                      🚦
-                    </div>
-
-                    <div className="history-info">
-
-                      <h3>
-                        {item.prediction}
-                      </h3>
-
-                      <p>
-                        {item.time}
-                      </p>
-
-                    </div>
-
-                    <div className="history-confidence">
-
-                      {item.confidence}%
-
-                    </div>
-
-                  </div>
-
-                )
-              )}
-
-            </div>
-
-          </div>
-
-        )}
-
-      </section>
-
-      {/* =================================================
-          HOW IT WORKS
-      ================================================= */}
-
-      <section className="how-section">
-
-        <div className="section-heading">
-
-          <span>
-            WORKFLOW
-          </span>
-
-          <h2>
-            How TrafficAI Works
+            From Image to Prediction
           </h2>
 
         </div>
 
-        <div className="steps">
+        <div className="workflow">
 
-          <div className="step">
+          <div className="workflow-step">
 
-            <div>
-              📤
+            <div className="step-number">
+              01
+            </div>
+
+            <div className="step-icon">
+              📷
             </div>
 
             <h3>
-              1. Upload
+              Upload
             </h3>
 
             <p>
@@ -899,53 +724,46 @@ function App() {
 
           </div>
 
-          <div className="step">
+          <div className="workflow-line"></div>
 
-            <div>
-              📷
+          <div className="workflow-step">
+
+            <div className="step-number">
+              02
             </div>
 
-            <h3>
-              2. Camera
-            </h3>
-
-            <p>
-              Capture a traffic sign using
-              your camera.
-            </p>
-
-          </div>
-
-          <div className="step">
-
-            <div>
+            <div className="step-icon">
               🧠
             </div>
 
             <h3>
-              3. CNN Analysis
+              CNN Processing
             </h3>
 
             <p>
-              The trained deep learning model
-              analyzes the image.
+              The deep learning model analyzes the image.
             </p>
 
           </div>
 
-          <div className="step">
+          <div className="workflow-line"></div>
 
-            <div>
+          <div className="workflow-step">
+
+            <div className="step-number">
+              03
+            </div>
+
+            <div className="step-icon">
               🎯
             </div>
 
             <h3>
-              4. Prediction
+              Prediction
             </h3>
 
             <p>
-              The model identifies the traffic
-              sign and confidence score.
+              The system identifies the traffic sign.
             </p>
 
           </div>
@@ -954,59 +772,152 @@ function App() {
 
       </section>
 
-      {/* =================================================
-          ABOUT
-      ================================================= */}
+      {/* =====================================
+          HISTORY SECTION
+      ===================================== */}
+      <section id="history" className="section">
 
-      <section
-        id="about"
-        className="about-section"
-      >
+        <div className="section-title">
 
-        <div className="about-card">
-
-          <span>
-            COLLEGE PROJECT
-          </span>
+          <span>PREDICTION HISTORY</span>
 
           <h2>
-            Traffic Sign Recognition
-            Using Deep Learning
+            Recent Predictions
           </h2>
 
+        </div>
+
+        <div className="history-card">
+
+          {history.length === 0 ? (
+
+            <div className="empty-history">
+
+              <div>
+                📋
+              </div>
+
+              <h3>
+                No predictions yet
+              </h3>
+
+              <p>
+                Your predictions will appear here.
+              </p>
+
+            </div>
+
+          ) : (
+
+            <div className="history-list">
+
+              {history.map((item, index) => (
+
+                <div
+                  className="history-item"
+                  key={index}
+                >
+
+                  <div className="history-icon">
+                    🚦
+                  </div>
+
+                  <div className="history-info">
+
+                    <h3>
+                      {item.prediction}
+                    </h3>
+
+                    <p>
+                      {item.type} • {item.time}
+                    </p>
+
+                  </div>
+
+                  <div className="history-confidence">
+
+                    <strong>
+                      {Number(
+                        item.confidence
+                      ).toFixed(2)}%
+                    </strong>
+
+                    <span>
+                      confidence
+                    </span>
+
+                  </div>
+
+                </div>
+
+              ))}
+
+            </div>
+
+          )}
+
+        </div>
+
+      </section>
+
+      {/* =====================================
+          ABOUT SECTION
+      ===================================== */}
+      <section id="about" className="about-section">
+
+        <div className="about-content">
+
+          <div className="section-title">
+
+            <span>ABOUT THE PROJECT</span>
+
+            <h2>
+              Traffic Sign Recognition
+              Using Deep Learning
+            </h2>
+
+          </div>
+
           <p>
-            This project uses a Convolutional
-            Neural Network trained on the GTSRB
-            traffic sign dataset to automatically
-            recognize traffic signs from images
-            and camera captures.
+            This project uses a Convolutional Neural
+            Network (CNN) to recognize traffic signs
+            from images. The model is trained using
+            the German Traffic Sign Recognition
+            Benchmark (GTSRB) dataset.
           </p>
 
-          <div className="tech-list">
+          <p>
+            The system can recognize different
+            categories including speed limits,
+            stop signs, warning signs, pedestrian
+            crossings and other road signs.
+          </p>
 
-            <span>
-              React
-            </span>
+          <div className="technology-grid">
 
-            <span>
-              Python
-            </span>
+            <div className="technology">
+              <span>🐍</span>
+              <strong>Python</strong>
+              <small>Backend</small>
+            </div>
 
-            <span>
-              Flask
-            </span>
+            <div className="technology">
+              <span>🔥</span>
+              <strong>TensorFlow</strong>
+              <small>Deep Learning</small>
+            </div>
 
-            <span>
-              TensorFlow
-            </span>
+            <div className="technology">
+              <span>⚛️</span>
+              <strong>React</strong>
+              <small>Frontend</small>
+            </div>
 
-            <span>
-              Keras
-            </span>
-
-            <span>
-              CNN
-            </span>
+            <div className="technology">
+              <span>🚀</span>
+              <strong>Flask</strong>
+              <small>API</small>
+            </div>
 
           </div>
 
@@ -1014,16 +925,22 @@ function App() {
 
       </section>
 
-      {/* =================================================
+      {/* =====================================
           FOOTER
-      ================================================= */}
+      ===================================== */}
+      <footer className="footer">
 
-      <footer>
+        <div>
+          🚦 Traffic Sign AI
+        </div>
 
         <p>
-          © 2026 TrafficAI | Traffic Sign
-          Recognition Using Deep Learning
+          Traffic Sign Recognition Using Deep Learning
         </p>
+
+        <span>
+          Built with React + Flask + TensorFlow
+        </span>
 
       </footer>
 
