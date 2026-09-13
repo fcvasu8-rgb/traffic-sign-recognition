@@ -1,0 +1,9 @@
+venv/
+website/node_modules/
+__pycache__/
+*.pyc
+
+dataset/
+*.zip
+
+.env
